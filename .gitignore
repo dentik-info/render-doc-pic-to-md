@@ -1,0 +1,15 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+.env
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+1 - snippy - md.py

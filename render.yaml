@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: kd-pdf-to-mp
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn server:app -b 0.0.0.0:$PORT --access-logfile - --error-logfile -
+    autoDeploy: true
+    envVars:
+      - key: MATHPIX_APP_ID
+        sync: false
+      - key: MATHPIX_APP_KEY
+        sync: false
