@@ -9,6 +9,9 @@ A minimal Flask web service to submit PDFs to Mathpix and retrieve the converted
 - `POST /process`
   - Multipart form upload with field `file` (PDF). Optional `options` form field (JSON) to override Mathpix options.
   - Returns `{ pdf_id, status_url, download_url }`.
+- `POST /process-image`
+  - Multipart form upload with field `file` (image: png, jpg, jpeg, gif, bmp, tif, tiff). Optional `options` form field (JSON) to override Mathpix options.
+  - Directly returns Mathpix JSON response from `/v3/text` (no polling needed).
 - `GET /status/<pdf_id>`
   - Proxies Mathpix job status response.
 - `GET /download/<pdf_id>.md`
@@ -50,6 +53,24 @@ python server.py
 
 Then open http://localhost:5000/health
 
+### Example curl (PDF processing)
+
+```bash
+curl -X POST http://localhost:5000/process \
+  -F file=@your.pdf \
+  -F 'options={"conversion_formats": {"md": true}, "math_inline_delimiters": ["$", "$"], "rm_spaces": true}'
+```
+
+### Example curl (Image processing)
+
+```bash
+curl -X POST http://localhost:5000/process-image \
+  -F file=@image.jpg \
+  -F 'options={"math_inline_delimiters": ["$", "$"], "rm_spaces": true}'
+```
+
+Both examples assume `MATHPIX_APP_ID` and `MATHPIX_APP_KEY` are exported in your environment.
+
 ## Deploy to Render
 
 - Push this repo to GitHub.
@@ -62,3 +83,5 @@ Then open http://localhost:5000/health
 
 - This service does not store files. Upload a PDF, receive a `pdf_id`, poll `/status`, and download Markdown via `/download` when ready.
 - For large or long-running jobs, prefer polling from the client. Avoid long synchronous waits in a single request on Render.
+- The image endpoint `/process-image` is synchronous and returns the OCR/LaTeX result immediately.
+- Never commit secrets. The sample script `1 - snippy - md.py` should be updated to load credentials from environment variables instead of hardcoding them.

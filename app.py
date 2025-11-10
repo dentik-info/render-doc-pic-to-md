@@ -2,6 +2,7 @@ import os
 import io
 import json
 from typing import Optional, Tuple
+import mimetypes
 
 import requests
 from flask import Flask, jsonify, request, send_file
@@ -12,6 +13,7 @@ APP = Flask(__name__)
 app = APP
 
 MATHPIX_BASE_URL = "https://api.mathpix.com/v3/pdf"
+MATHPIX_TEXT_URL = "https://api.mathpix.com/v3/text"
 
 
 def _get_mathpix_headers() -> dict:
@@ -57,6 +59,38 @@ def mathpix_start_job(file_bytes: bytes, filename: str, options: Optional[dict] 
 		return 502, {"error": f"Upstream request failed: {e.__class__.__name__}: {e}"}
     
 	# Ensure JSON payload even on non-200
+	try:
+		payload = resp.json()
+	except ValueError:
+		payload = {"error": "Invalid response from Mathpix (non-JSON)", "text": resp.text}
+	return resp.status_code, payload
+
+
+def mathpix_text(file_bytes: bytes, filename: str, options: Optional[dict] = None) -> Tuple[int, dict]:
+	"""Submit an image (png/jpg/jpeg/gif/bmp/tiff) to Mathpix /v3/text and return (status_code, response_json)."""
+	default_options = {
+		"math_inline_delimiters": ["$", "$"],
+		"rm_spaces": True,
+	}
+	options = options or default_options
+
+	# Guess a mimetype from the filename; fallback to octet-stream
+	content_type, _ = mimetypes.guess_type(filename)
+	if not content_type:
+		content_type = "application/octet-stream"
+
+	headers = _get_mathpix_headers()
+	try:
+		resp = requests.post(
+			MATHPIX_TEXT_URL,
+			headers=headers,
+			data={"options_json": json.dumps(options)},
+			files={"file": (filename, file_bytes, content_type)},
+			timeout=60,
+		)
+	except requests.RequestException as e:
+		return 502, {"error": f"Upstream request failed: {e.__class__.__name__}: {e}"}
+
 	try:
 		payload = resp.json()
 	except ValueError:
@@ -146,6 +180,39 @@ def process_pdf():
 		),
 		202,
 	)
+
+
+@APP.post("/process-image")
+def process_image():
+	"""Accept an image and send it to Mathpix /v3/text for OCR/markdown extraction."""
+	# Validate env
+	missing = _validate_env()
+	if missing:
+		return jsonify({"error": missing}), 500
+
+	if "file" not in request.files:
+		return jsonify({"error": "No file part provided. Use multipart/form-data with field 'file'."}), 400
+
+	file = request.files["file"]
+	if not file or not file.filename or file.filename == "":
+		return jsonify({"error": "Empty filename."}), 400
+
+	allowed_ext = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}
+	fname_lower = file.filename.lower()
+	if not any(fname_lower.endswith(ext) for ext in allowed_ext):
+		return jsonify({"error": "Only image files are supported (png, jpg, jpeg, gif, bmp, tif, tiff)."}), 400
+
+	# Optional custom options via JSON field 'options'
+	opts = None
+	if "options" in request.form:
+		try:
+			opts = json.loads(request.form["options"]) if request.form["options"] else None
+		except json.JSONDecodeError:
+			return jsonify({"error": "Invalid JSON in 'options' field."}), 400
+
+	file_bytes = file.read()
+	status_code, payload = mathpix_text(file_bytes, file.filename, opts)
+	return jsonify(payload), status_code
 
 
 @APP.get("/status/<pdf_id>")
